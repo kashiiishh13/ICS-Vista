@@ -5,33 +5,14 @@
 import sys, warnings
 warnings.filterwarnings("ignore")
 from collections import defaultdict
-from scapy.all import PcapReader, IP, TCP
-
-PORTS = {502: "Modbus", 20000: "DNP3", 102: "S7comm",
-         44818: "EtherNet/IP", 4840: "OPC UA"}
-S7_ENG = {0x05, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F, 0x28, 0x29}
-S7_READ = {0x04}
-MODBUS_WRITE = {5, 6, 15, 16, 22, 23}
-MODBUS_READ = {1, 2, 3, 4}
+from scapy.all import PcapReader, IP, TCP, UDP
+from ics_decoders import PORTS, request_kind, flow_direction
 
 SERVER_RATIO_MIN = 0.80
 WRITE_SHARE_ENG = 0.05
 MIN_EVIDENCE = 5          # minimum packets / read+write requests before giving a role
 LEARN_FRACTION = 0.20     # first 20% of capture time = learning window
 STEP = 0.10               # check every 10% of capture time afterwards
-
-
-def s7_function(p):
-    if len(p) < 17 or p[0] != 0x03:
-        return None
-    s7 = 4 + p[4] + 1
-    if len(p) <= s7 + 10 or p[s7] != 0x32 or p[s7 + 1] != 1:
-        return None
-    return p[s7 + 10]
-
-
-def modbus_function(p):
-    return (p[7] & 0x7F) if len(p) >= 8 else None
 
 
 # ---------- pass 1: read pcap into a compact event list ----------
@@ -42,29 +23,26 @@ if len(sys.argv) < 2:
 events = []   # (time, client, server, kind, is_request)
 with PcapReader(sys.argv[1]) as reader:
     for pkt in reader:
-        if IP not in pkt or TCP not in pkt:
+        if IP not in pkt:
             continue
         src, dst = pkt[IP].src, pkt[IP].dst
         if src.startswith("127.") or dst.startswith("127."):
             continue
-        payload = bytes(pkt[TCP].payload)
-        if not payload:
-            continue
-        sport, dport = pkt[TCP].sport, pkt[TCP].dport
-        if dport in PORTS:
-            proto, client, server, is_req = PORTS[dport], src, dst, True
-        elif sport in PORTS:
-            proto, client, server, is_req = PORTS[sport], dst, src, False
+        if TCP in pkt:
+            l4 = pkt[TCP]
+        elif UDP in pkt:
+            l4 = pkt[UDP]
         else:
             continue
-        kind = None
-        if is_req:
-            if proto == "S7comm":
-                fc = s7_function(payload)
-                kind = "write" if fc in S7_ENG else "read" if fc in S7_READ else None
-            elif proto == "Modbus":
-                fc = modbus_function(payload)
-                kind = "write" if fc in MODBUS_WRITE else "read" if fc in MODBUS_READ else None
+        payload = bytes(l4.payload)
+        if not payload:
+            continue
+        flow = flow_direction(l4.sport, l4.dport)
+        if flow is None:
+            continue
+        proto, is_req = flow
+        client, server = (src, dst) if is_req else (dst, src)
+        kind = request_kind(proto, payload) if is_req else None
         events.append((float(pkt.time), client, server, kind, is_req))
 
 if not events:

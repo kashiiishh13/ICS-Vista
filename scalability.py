@@ -3,7 +3,7 @@
 # Requires the LIMIT edit in ics_vista2.py (second argument = max packets, 0 = all).
 # NOTE: each run overwrites inventory.csv/graph.png; the last run is the full capture,
 # so your final files are the complete results.
-import re, subprocess, sys
+import os, re, subprocess, sys
 import pandas as pd
 import matplotlib
 matplotlib.use("Agg")
@@ -14,17 +14,22 @@ if len(sys.argv) < 2:
     sys.exit(1)
 
 pcap = sys.argv[1]
+SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ics_vista.py")
+if not os.path.exists(SCRIPT):
+    print(f"ics_vista2.py not found at {SCRIPT}. Copy it next to scalability.py.")
+    sys.exit(1)
 limits = [25000, 50000, 100000, 150000, 200000, 0]   # 0 = whole file (keep last)
 pattern = re.compile(r"Packets read:\s*(\d+)\s*\|\s*Time:\s*([\d.]+)s")
 
 rows = []
 for lim in limits:
     print(f"Running with limit {lim or 'ALL'} ...", flush=True)
-    out = subprocess.run([sys.executable, "ics_vista2.py", pcap, str(lim)],
-                         capture_output=True, text=True).stdout
-    m = pattern.search(out)
+    result = subprocess.run([sys.executable, SCRIPT, pcap, str(lim)],
+                            capture_output=True, text=True)
+    m = pattern.search(result.stdout)
     if not m:
-        print("  could not parse output, skipping")
+        print("  could not parse output. Error from ics_vista2.py:")
+        print("  ", (result.stderr or result.stdout)[-600:].strip())
         continue
     pk, sec = int(m.group(1)), float(m.group(2))
     rows.append({"packets": pk, "seconds": round(sec, 1),

@@ -1,0 +1,64 @@
+
+======================================================================
+STEP 1: Discovery and role classification
+======================================================================
+WARNING: Wireshark is installed, but cannot read manuf !
+           ip               mac                 protocols  client_pkts  server_pkts  peers  reads  writes_or_eng write_share decode_coverage timing_cv   predicted_role
+192.168.1.100 00:0c:29:ee:b7:84 EtherNet/IP,Modbus,OPC UA         6426            0      6   6426              0         0.0             1.0     4.109      supervisory
+192.168.1.101 00:0c:29:f9:a8:75                    Modbus            0         1071      1      0              0                                       field_controller
+192.168.1.102 00:0c:29:6e:ba:5e                    Modbus            0         1071      1      0              0                                       field_controller
+192.168.1.103 00:0c:29:dc:42:e5                    Modbus            0         1071      1      0              0                                       field_controller
+192.168.1.104 00:0c:29:3c:11:3f EtherNet/IP,Modbus,OPC UA            2         1069      1      0              0                         0.0           field_controller
+192.168.1.105 00:0c:29:70:aa:b7                    Modbus            0         1071      1      0              0                                       field_controller
+192.168.1.106 00:0c:29:58:97:2a        EtherNet/IP,Modbus            1         1070      1      0              0                         0.0           field_controller
+
+Packets read: 58325  |  Time: 23.2s  |  Speed: 2518 packets/s
+Saved inventory.csv
+Saved graph.png
+
+[STEP 1: Discovery and role classification] OK in 28s
+
+======================================================================
+STEP 3: False-alert test
+======================================================================
+WARNING: Wireshark is installed, but cannot read manuf !
+ICS events: 12852  |  capture duration: 0.99 h
+Learned 7 devices: ['192.168.1.100', '192.168.1.101', '192.168.1.102', '192.168.1.103', '192.168.1.104', '192.168.1.105', '192.168.1.106']
+  192.168.1.100: supervisory
+  192.168.1.101: field_controller
+  192.168.1.102: field_controller
+  192.168.1.103: field_controller
+  192.168.1.104: field_controller
+  192.168.1.105: field_controller
+  192.168.1.106: field_controller
+
+=== Alerts after learning window ===
+None
+
+Total alerts: 0  |  monitored: 0.79 h  |  alerts/hour: 0.00
+
+[STEP 3: False-alert test] OK in 25s
+
+======================================================================
+STEP 4: Scalability test
+======================================================================
+Running with limit 25000 ...
+  25000 packets in 9.7s (2577 pkt/s)
+Running with limit 50000 ...
+  50000 packets in 19.1s (2618 pkt/s)
+Running with limit 100000 ...
+  58325 packets in 21.8s (2675 pkt/s)
+Running with limit 150000 ...
+  58325 packets in 22.5s (2592 pkt/s)
+Running with limit 200000 ...
+  58325 packets in 20.9s (2791 pkt/s)
+Running with limit ALL ...
+  58325 packets in 22.7s (2569 pkt/s)
+
+  packets  seconds  packets_per_sec
+   25000      9.7             2577
+   50000     19.1             2618
+   58325     21.8             2675
+Saved scaling.csv and scaling.png
+
+[STEP 4: Scalability test] OK in 143s

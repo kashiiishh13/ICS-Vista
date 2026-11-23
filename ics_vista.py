@@ -1,48 +1,20 @@
-# ics_vista2.py
-# Usage: python ics_vista2.py 4SICS-GeekLounge-151020.pcap
+# ics_vista.py
+# Usage: python ics_vista.py capture.pcap [max_packets]
+# Needs ics_decoders.py in the same folder.
 import sys, time, warnings
 warnings.filterwarnings("ignore")
 from collections import defaultdict
 from statistics import mean, pstdev
-from scapy.all import PcapReader, IP, TCP, Ether
+from scapy.all import PcapReader, IP, TCP, UDP, Ether
 import pandas as pd
+from ics_decoders import PORTS, request_kind, flow_direction
 
 # ---------------- settings you can tune ----------------
-PORTS = {502: "Modbus", 20000: "DNP3", 102: "S7comm",
-         44818: "EtherNet/IP", 4840: "OPC UA"}
-
 SERVER_RATIO_MIN = 0.80   # share of ICS payload packets sent as server -> field controller
-CV_STEADY_MAX = 0.50      # timing CV below this = steady polling (HMI-like)
+WRITE_SHARE_ENG = 0.05    # >=5% of read/write requests are writes/eng -> engineering workstation
 # -------------------------------------------------------
 
-# Function codes that indicate engineering activity (write / download / upload / control)
-S7_ENG = {0x05, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F, 0x28, 0x29}
-S7_READ = {0x04}
-MODBUS_WRITE = {5, 6, 15, 16, 22, 23}
-MODBUS_READ = {1, 2, 3, 4}
-
-
-def parse_s7_function(payload):
-    """Return S7 function code of a Job request, else None.
-    Layout: TPKT(4) + COTP(LI+1) + S7 header(10 or 12) + parameter (1st byte = function)."""
-    if len(payload) < 17 or payload[0] != 0x03:
-        return None
-    cotp_len = payload[4] + 1
-    s7 = 5 + cotp_len - 1  # TPKT is 4 bytes, COTP starts at index 4
-    s7 = 4 + cotp_len
-    if len(payload) <= s7 + 10 or payload[s7] != 0x32:
-        return None
-    rosctr = payload[s7 + 1]
-    if rosctr != 1:          # only Job requests carry the function we care about
-        return None
-    return payload[s7 + 10]
-
-
-def parse_modbus_function(payload):
-    """MBAP header is 7 bytes, function code is byte 8."""
-    if len(payload) < 8:
-        return None
-    return payload[7] & 0x7F
+LIMIT = int(sys.argv[2]) if len(sys.argv) > 2 and int(sys.argv[2]) > 0 else None
 
 
 def new_device():
@@ -54,7 +26,7 @@ def new_device():
 devices = defaultdict(new_device)
 
 if len(sys.argv) < 2:
-    print("Usage: python ics_vista2.py <file.pcap>")
+    print("Usage: python ics_vista.py <file.pcap> [max_packets]")
     sys.exit(1)
 
 start = time.time()
@@ -62,24 +34,31 @@ n_packets = 0
 
 with PcapReader(sys.argv[1]) as reader:
     for pkt in reader:
+        if LIMIT and n_packets >= LIMIT:
+            break
         n_packets += 1
-        if IP not in pkt or TCP not in pkt:
+        if IP not in pkt:
             continue
         src, dst = pkt[IP].src, pkt[IP].dst
         if src.startswith("127.") or dst.startswith("127."):
             continue
 
-        payload = bytes(pkt[TCP].payload)
+        if TCP in pkt:
+            l4 = pkt[TCP]
+        elif UDP in pkt:
+            l4 = pkt[UDP]
+        else:
+            continue
+
+        payload = bytes(l4.payload)
         if len(payload) == 0:          # ignore empty ACKs
             continue
 
-        sport, dport = pkt[TCP].sport, pkt[TCP].dport
-        if dport in PORTS:             # src is client sending a request
-            proto, client, server, is_request = PORTS[dport], src, dst, True
-        elif sport in PORTS:           # src is server sending a response
-            proto, client, server, is_request = PORTS[sport], dst, src, False
-        else:
+        flow = flow_direction(l4.sport, l4.dport)
+        if flow is None:
             continue
+        proto, is_request = flow
+        client, server = (src, dst) if is_request else (dst, src)
 
         if Ether in pkt:
             devices[src]["macs"].add(pkt[Ether].src)
@@ -91,15 +70,11 @@ with PcapReader(sys.argv[1]) as reader:
         if is_request:
             c["as_client"] += 1
             c["times"].append(float(pkt.time))
-            fc = None
-            if proto == "S7comm":
-                fc = parse_s7_function(payload)
-                if fc in S7_ENG:   c["writes"] += 1
-                elif fc in S7_READ: c["reads"] += 1
-            elif proto == "Modbus":
-                fc = parse_modbus_function(payload)
-                if fc in MODBUS_WRITE: c["writes"] += 1
-                elif fc in MODBUS_READ: c["reads"] += 1
+            kind = request_kind(proto, payload)
+            if kind == "write":
+                c["writes"] += 1
+            elif kind == "read":
+                c["reads"] += 1
         else:
             s["as_server"] += 1
 
@@ -116,26 +91,22 @@ def timing_cv(times):
     return pstdev(gaps) / mean(gaps)
 
 
-WRITE_SHARE_ENG = 0.05   # if >=5% of read/write requests are writes/eng -> engineering
-
-def classify(d, cv):
+def classify(d):
     total = d["as_client"] + d["as_server"]
     if total == 0:
         return "unknown"
     if d["as_server"] / total >= SERVER_RATIO_MIN:
         return "field_controller"
     rw = d["reads"] + d["writes"]
-    if rw == 0:
+    if rw == 0:                        # client, but we could not decode what it asks for
         return "unknown"
-    write_share = d["writes"] / rw
-    if write_share >= WRITE_SHARE_ENG:
-        return "engineering_workstation"
-    return "supervisory"
+    return "engineering_workstation" if d["writes"] / rw >= WRITE_SHARE_ENG else "supervisory"
 
 
 rows = []
 for ip, d in devices.items():
     cv = timing_cv(d["times"])
+    rw = d["reads"] + d["writes"]
     rows.append({
         "ip": ip,
         "mac": ",".join(sorted(d["macs"])),
@@ -145,9 +116,10 @@ for ip, d in devices.items():
         "peers": len(d["peers"]),
         "reads": d["reads"],
         "writes_or_eng": d["writes"],
-        "write_share": round(d["writes"] / (d["reads"] + d["writes"]), 4) if (d["reads"] + d["writes"]) else "",
+        "write_share": round(d["writes"] / rw, 4) if rw else "",
+        "decode_coverage": round(rw / d["as_client"], 2) if d["as_client"] else "",
         "timing_cv": round(cv, 3) if cv is not None else "",
-        "predicted_role": classify(d, cv),
+        "predicted_role": classify(d),
     })
 
 df = pd.DataFrame(rows).sort_values("ip")
@@ -170,9 +142,10 @@ try:
     role_of = dict(zip(df["ip"], df["predicted_role"]))
     for ip, d in devices.items():
         G.add_node(ip)
-        for peer in d["peers"]:
-            if d["as_client"] > 0 and (peer in devices):
-                G.add_edge(ip, peer)
+        if d["as_client"] > 0:
+            for peer in d["peers"]:
+                if peer in devices:
+                    G.add_edge(ip, peer)
     node_colors = [colors.get(role_of.get(n, "unknown"), "tab:gray") for n in G.nodes]
     plt.figure(figsize=(7, 5))
     nx.draw(G, with_labels=True, node_color=node_colors, node_size=1800, font_size=8, arrows=True)
