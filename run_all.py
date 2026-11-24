@@ -79,6 +79,23 @@ else:
     reason = "no ground truth file found" if not have_gt else "step 1 failed"
     print(f"\nSkipping evaluation: {reason} (looked for {gt_src})")
     results["2. Evaluation"] = None
+    inv_path = os.path.join(outdir, "inventory.csv")
+    if not have_gt and results["1. Discovery + roles"] and os.path.exists(inv_path):
+        import csv
+        gt_dir = os.path.join(HERE, "ground_truth")
+        os.makedirs(gt_dir, exist_ok=True)
+        tpl_path = os.path.join(gt_dir, name + "_TEMPLATE.csv")
+        with open(inv_path, newline="", encoding="utf-8") as f_in, \
+                open(tpl_path, "w", newline="", encoding="utf-8") as f_out:
+            w = csv.writer(f_out)
+            w.writerow(["ip", "true_role"])
+            for row in csv.DictReader(f_in):
+                w.writerow([row["ip"], ""])
+        print(f"\nCreated a ground-truth TEMPLATE: {tpl_path}")
+        print("  Fill the true_role column from Wireshark (NOT from the tool's predictions),")
+        print("  add any ICS device the tool missed, then rename it to:")
+        print(f"  {os.path.join(gt_dir, name + '.csv')}")
+        print("  Roles: field_controller, supervisory, engineering_workstation")
 
 results["3. False alerts"] = run("STEP 3: False-alert test", "alerts.py", [pcap])
 

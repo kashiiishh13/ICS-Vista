@@ -6,7 +6,7 @@ import sys, warnings
 warnings.filterwarnings("ignore")
 from collections import defaultdict
 from scapy.all import PcapReader, IP, TCP, UDP
-from ics_decoders import PORTS, request_kind, flow_direction
+from ics_decoders import PORTS, request_kind, flow_direction, looks_like
 
 SERVER_RATIO_MIN = 0.80
 WRITE_SHARE_ENG = 0.05
@@ -29,9 +29,9 @@ with PcapReader(sys.argv[1]) as reader:
         if src.startswith("127.") or dst.startswith("127."):
             continue
         if TCP in pkt:
-            l4 = pkt[TCP]
+            l4, is_udp = pkt[TCP], False
         elif UDP in pkt:
-            l4 = pkt[UDP]
+            l4, is_udp = pkt[UDP], True
         else:
             continue
         payload = bytes(l4.payload)
@@ -41,6 +41,8 @@ with PcapReader(sys.argv[1]) as reader:
         if flow is None:
             continue
         proto, is_req = flow
+        if is_udp and not looks_like(proto, payload):   # e.g. DNS with an unlucky port
+            continue
         client, server = (src, dst) if is_req else (dst, src)
         kind = request_kind(proto, payload) if is_req else None
         events.append((float(pkt.time), client, server, kind, is_req))

@@ -1,0 +1,4 @@
+ip,true_role
+10.10.10.10,field_controller
+10.10.10.20,supervisory
+10.10.10.30,engineering_workstation

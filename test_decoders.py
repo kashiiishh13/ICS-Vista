@@ -7,7 +7,7 @@ import sys, warnings
 warnings.filterwarnings("ignore")
 from collections import Counter
 from scapy.all import PcapReader, TCP, UDP
-from ics_decoders import PORTS, request_kind, flow_direction
+from ics_decoders import PORTS, request_kind, flow_direction, looks_like
 
 if len(sys.argv) < 2:
     print("Usage: python test_decoders.py <file.pcap>")
@@ -29,7 +29,7 @@ with PcapReader(sys.argv[1]) as reader:
             continue
         census[(transport, min(l4.sport, l4.dport))] += 1   # lower port = likely the service
         flow = flow_direction(l4.sport, l4.dport)
-        if flow and flow[1]:
+        if flow and flow[1] and not (transport == "UDP" and not looks_like(flow[0], payload)):
             proto = flow[0]
             kinds[(proto, request_kind(proto, payload) or "other")] += 1
 

@@ -103,3 +103,30 @@ def flow_direction(sport, dport):
     if s_ok:
         return PORTS[sport], False
     return None
+
+
+# ---------------- signature checks (used for UDP, where ports alone are unreliable) ----------------
+_OPC_TYPES = {b"HEL", b"ACK", b"OPN", b"MSG", b"CLO", b"ERR", b"RHE"}
+_ENIP_CMDS = {0x0004, 0x0063, 0x0064, 0x0065, 0x0066, 0x006F, 0x0070}
+
+
+def looks_like(proto, p):
+    """True if the payload plausibly belongs to the protocol (header signature + length check).
+    This stops DNS/NTP/VPN packets with an unlucky random port from being counted as ICS traffic."""
+    if proto == "Modbus":
+        return len(p) >= 8 and p[2] == 0 and p[3] == 0 and int.from_bytes(p[4:6], "big") == len(p) - 6
+    if proto == "S7comm":
+        return len(p) >= 7 and p[0] == 0x03 and p[1] == 0x00 and int.from_bytes(p[2:4], "big") == len(p)
+    if proto == "DNP3":
+        return len(p) >= 10 and p[0] == 0x05 and p[1] == 0x64
+    if proto == "EtherNet/IP":
+        if (len(p) >= 24 and int.from_bytes(p[0:2], "little") in _ENIP_CMDS
+                and int.from_bytes(p[2:4], "little") == len(p) - 24):
+            return True
+        # implicit I/O on UDP 2222: item count 2, sequenced/connected address item
+        return (len(p) >= 8 and int.from_bytes(p[0:2], "little") == 2
+                and int.from_bytes(p[2:4], "little") in (0x8002, 0x00A1))
+    if proto == "OPC UA":
+        return (len(p) >= 8 and p[0:3] in _OPC_TYPES and chr(p[3]) in "FCA"
+                and int.from_bytes(p[4:8], "little") == len(p))
+    return False

@@ -7,7 +7,7 @@ from collections import defaultdict
 from statistics import mean, pstdev
 from scapy.all import PcapReader, IP, TCP, UDP, Ether
 import pandas as pd
-from ics_decoders import PORTS, request_kind, flow_direction
+from ics_decoders import PORTS, request_kind, flow_direction, looks_like
 
 # ---------------- settings you can tune ----------------
 SERVER_RATIO_MIN = 0.80   # share of ICS payload packets sent as server -> field controller
@@ -44,9 +44,9 @@ with PcapReader(sys.argv[1]) as reader:
             continue
 
         if TCP in pkt:
-            l4 = pkt[TCP]
+            l4, is_udp = pkt[TCP], False
         elif UDP in pkt:
-            l4 = pkt[UDP]
+            l4, is_udp = pkt[UDP], True
         else:
             continue
 
@@ -58,6 +58,8 @@ with PcapReader(sys.argv[1]) as reader:
         if flow is None:
             continue
         proto, is_request = flow
+        if is_udp and not looks_like(proto, payload):   # e.g. DNS with an unlucky port
+            continue
         client, server = (src, dst) if is_request else (dst, src)
 
         if Ether in pkt:
