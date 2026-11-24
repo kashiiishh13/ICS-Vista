@@ -7,6 +7,6 @@ Usage:
 
 python run_all.py <file_path>
 
-python run_batch.py <file_path>
+python run_batch.py <folder_path>
 
 Runs run_all.py on every PCAP in a folder (skipping the slow scalability step), then builds one summary table, results\batch_summary.csv.
