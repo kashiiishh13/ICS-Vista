@@ -4,7 +4,8 @@
 # "write" means write, control, download or other engineering-type activity.
 
 PORTS = {502: "Modbus", 20000: "DNP3", 102: "S7comm",
-         44818: "EtherNet/IP", 2222: "EtherNet/IP", 4840: "OPC UA"}
+         44818: "EtherNet/IP", 2222: "EtherNet/IP", 4840: "OPC UA",
+         5094: "HART-IP", 5095: "HART-IP"}
 
 
 # ---------------- Modbus/TCP ----------------
@@ -82,8 +83,24 @@ def opcua_kind(p):
     return "write" if svc in OPC_WRITE else "read" if svc in OPC_READ else None
 
 
+# ---------------- HART-IP (header + HART command number) ----------------
+# HART-IP header (8 bytes): version, message type (0 = request), message ID (3 = HART PDU),
+# status, sequence (2), byte count (2). The HART PDU follows: delimiter, address, command number.
+HART_READ = {0, 1, 2, 3, 7, 8, 9, 11, 12, 13, 14, 15, 16, 20, 21, 33, 48, 50}
+HART_WRITE = {6, 17, 18, 19, 22, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 49, 51}
+
+def hartip_kind(p):
+    if len(p) < 12 or p[0] != 1 or p[1] != 0 or p[2] != 3:   # requests carrying a HART PDU only
+        return None
+    cmd_off = 14 if p[8] & 0x80 else 10        # long frame = 5-byte address, short frame = 1 byte
+    if len(p) <= cmd_off:
+        return None
+    cmd = p[cmd_off]
+    return "write" if cmd in HART_WRITE else "read" if cmd in HART_READ else None
+
+
 DECODERS = {"Modbus": modbus_kind, "S7comm": s7_kind, "DNP3": dnp3_kind,
-            "EtherNet/IP": enip_kind, "OPC UA": opcua_kind}
+            "EtherNet/IP": enip_kind, "OPC UA": opcua_kind, "HART-IP": hartip_kind}
 
 
 def request_kind(proto, payload):
@@ -129,4 +146,27 @@ def looks_like(proto, p):
     if proto == "OPC UA":
         return (len(p) >= 8 and p[0:3] in _OPC_TYPES and chr(p[3]) in "FCA"
                 and int.from_bytes(p[4:8], "little") == len(p))
+    if proto == "HART-IP":
+        return len(p) >= 8 and p[0] == 1 and p[1] in (0, 1, 2, 3, 15) and p[2] <= 10
     return False
+
+
+# ---------------- role classification (shared by ics_vista.py and alerts.py) ----------------
+SERVER_RATIO_MIN = 0.80        # share of ICS payload packets sent as server -> field controller
+WRITE_SHARE_ENG = 0.05         # >=5% of read/write requests are writes/eng -> engineering workstation
+FANOUT_SUPERVISORY_MIN = 5     # a client talking to >=5 distinct controllers -> supervisory system
+                               # (set to 10**9 to reproduce the earlier write-share-only rule)
+
+
+def classify_role(as_client, as_server, reads, writes, n_peers, min_evidence=1):
+    total = as_client + as_server
+    if total < min_evidence:
+        return "unknown"
+    if as_server / total >= SERVER_RATIO_MIN:
+        return "field_controller"
+    rw = reads + writes
+    if rw < min_evidence:
+        return "unknown"                       # a client whose requests we cannot decode
+    if n_peers >= FANOUT_SUPERVISORY_MIN:      # high fan-out polling = supervisory, even with some writes
+        return "supervisory"
+    return "engineering_workstation" if writes / rw >= WRITE_SHARE_ENG else "supervisory"

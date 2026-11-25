@@ -1,4 +1,0 @@
-ip,mac,protocols,client_pkts,server_pkts,peers,reads,writes_or_eng,write_share,decode_coverage,timing_cv,predicted_role
-10.10.10.10,28:63:36:89:59:82,S7comm,0,84605,2,0,0,,,,field_controller
-10.10.10.20,00:1c:06:27:64:11,S7comm,94859,0,1,47421,10,0.0002,0.5,4.725,supervisory
-10.10.10.30,54:ee:75:3f:4a:db,S7comm,22283,0,1,0,18,1.0,0.0,8.563,engineering_workstation

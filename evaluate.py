@@ -1,10 +1,22 @@
 # evaluate.py
 # Usage: python evaluate.py
 # Needs inventory.csv (from ics_vista2.py) and ground_truth.csv (ip,true_role)
+import sys
 import pandas as pd
 
 inv = pd.read_csv("inventory.csv")
 gt = pd.read_csv("ground_truth.csv")
+
+VALID_ROLES = {"field_controller", "supervisory", "engineering_workstation"}
+gt["ip"] = gt["ip"].astype(str).str.strip()
+gt["true_role"] = gt["true_role"].fillna("").astype(str).str.strip()
+bad = gt[~gt["true_role"].isin(VALID_ROLES)]
+if len(bad):
+    print(f"ERROR: {len(bad)} row(s) in the ground truth have a missing or invalid true_role.")
+    print(bad.head(10).to_string(index=False))
+    print("Valid roles:", ", ".join(sorted(VALID_ROLES)))
+    print("Fill in true_role for every device (from Wireshark), then run again.")
+    sys.exit(1)
 
 # ---------- 1. Discovery ----------
 found, true = set(inv["ip"]), set(gt["ip"])

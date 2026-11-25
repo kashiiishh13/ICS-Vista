@@ -1,8 +1,0 @@
-ip,true_role,predicted_role
-192.168.1.100,supervisory,supervisory
-192.168.1.101,field_controller,field_controller
-192.168.1.102,field_controller,field_controller
-192.168.1.103,field_controller,field_controller
-192.168.1.104,field_controller,field_controller
-192.168.1.105,field_controller,field_controller
-192.168.1.106,field_controller,field_controller

@@ -1,8 +1,0 @@
-ip,mac,protocols,client_pkts,server_pkts,peers,reads,writes_or_eng,write_share,decode_coverage,timing_cv,predicted_role
-192.168.1.100,00:0c:29:ee:b7:84,Modbus,6426,0,6,6426,0,0.0,1.0,4.109,supervisory
-192.168.1.101,00:0c:29:f9:a8:75,Modbus,0,1071,1,0,0,,,,field_controller
-192.168.1.102,00:0c:29:6e:ba:5e,Modbus,0,1071,1,0,0,,,,field_controller
-192.168.1.103,00:0c:29:dc:42:e5,Modbus,0,1071,1,0,0,,,,field_controller
-192.168.1.104,00:0c:29:3c:11:3f,Modbus,0,1071,1,0,0,,,,field_controller
-192.168.1.105,00:0c:29:70:aa:b7,Modbus,0,1071,1,0,0,,,,field_controller
-192.168.1.106,00:0c:29:58:97:2a,Modbus,0,1071,1,0,0,,,,field_controller

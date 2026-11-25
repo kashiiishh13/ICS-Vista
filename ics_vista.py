@@ -7,12 +7,9 @@ from collections import defaultdict
 from statistics import mean, pstdev
 from scapy.all import PcapReader, IP, TCP, UDP, Ether
 import pandas as pd
-from ics_decoders import PORTS, request_kind, flow_direction, looks_like
+from ics_decoders import PORTS, request_kind, flow_direction, looks_like, classify_role
 
-# ---------------- settings you can tune ----------------
-SERVER_RATIO_MIN = 0.80   # share of ICS payload packets sent as server -> field controller
-WRITE_SHARE_ENG = 0.05    # >=5% of read/write requests are writes/eng -> engineering workstation
-# -------------------------------------------------------
+# Role thresholds (SERVER_RATIO_MIN, WRITE_SHARE_ENG, FANOUT_SUPERVISORY_MIN) live in ics_decoders.py
 
 LIMIT = int(sys.argv[2]) if len(sys.argv) > 2 and int(sys.argv[2]) > 0 else None
 
@@ -94,15 +91,7 @@ def timing_cv(times):
 
 
 def classify(d):
-    total = d["as_client"] + d["as_server"]
-    if total == 0:
-        return "unknown"
-    if d["as_server"] / total >= SERVER_RATIO_MIN:
-        return "field_controller"
-    rw = d["reads"] + d["writes"]
-    if rw == 0:                        # client, but we could not decode what it asks for
-        return "unknown"
-    return "engineering_workstation" if d["writes"] / rw >= WRITE_SHARE_ENG else "supervisory"
+    return classify_role(d["as_client"], d["as_server"], d["reads"], d["writes"], len(d["peers"]))
 
 
 rows = []
@@ -124,15 +113,25 @@ for ip, d in devices.items():
         "predicted_role": classify(d),
     })
 
-df = pd.DataFrame(rows).sort_values("ip")
+COLUMNS = ["ip", "mac", "protocols", "client_pkts", "server_pkts", "peers", "reads",
+           "writes_or_eng", "write_share", "decode_coverage", "timing_cv", "predicted_role"]
+df = pd.DataFrame(rows, columns=COLUMNS)
+if len(df):
+    df = df.sort_values("ip")
 df.to_csv("inventory.csv", index=False)
-print(df.to_string(index=False))
+if len(df):
+    print(df.to_string(index=False))
+else:
+    print("No ICS devices found: no payload traffic on the supported protocols "
+          "(Modbus 502, DNP3 20000, S7comm 102, EtherNet/IP 44818/2222, OPC UA 4840, HART-IP 5094/5095).")
 print(f"\nPackets read: {n_packets}  |  Time: {elapsed:.1f}s  |  "
       f"Speed: {n_packets / max(elapsed, 1e-9):.0f} packets/s")
 print("Saved inventory.csv")
 
 # ---------- optional: communication graph ----------
 try:
+    if len(df) == 0:
+        raise ValueError("no devices to draw")
     import networkx as nx
     import matplotlib
     matplotlib.use("Agg")

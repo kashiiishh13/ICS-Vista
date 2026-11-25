@@ -1,6 +1,6 @@
 # scalability.py
 # Usage: python scalability.py 4SICS-GeekLounge-151020.pcap
-# Requires the LIMIT edit in ics_vista2.py (second argument = max packets, 0 = all).
+# Requires the LIMIT edit in ics_vista.py (second argument = max packets, 0 = all).
 # NOTE: each run overwrites inventory.csv/graph.png; the last run is the full capture,
 # so your final files are the complete results.
 import os, re, subprocess, sys
@@ -16,7 +16,7 @@ if len(sys.argv) < 2:
 pcap = sys.argv[1]
 SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ics_vista.py")
 if not os.path.exists(SCRIPT):
-    print(f"ics_vista2.py not found at {SCRIPT}. Copy it next to scalability.py.")
+    print(f"ics_vista.py not found at {SCRIPT}. Copy it next to scalability.py.")
     sys.exit(1)
 limits = [25000, 50000, 100000, 150000, 200000, 0]   # 0 = whole file (keep last)
 pattern = re.compile(r"Packets read:\s*(\d+)\s*\|\s*Time:\s*([\d.]+)s")
@@ -28,14 +28,19 @@ for lim in limits:
                             capture_output=True, text=True)
     m = pattern.search(result.stdout)
     if not m:
-        print("  could not parse output. Error from ics_vista2.py:")
+        print(f"  could not parse output. Error from {os.path.basename(SCRIPT)}:")
         print("  ", (result.stderr or result.stdout)[-600:].strip())
         continue
     pk, sec = int(m.group(1)), float(m.group(2))
+    if sec <= 0:
+        print(f"  {pk} packets processed too fast to measure, skipping")
+        continue
     rows.append({"packets": pk, "seconds": round(sec, 1),
                  "packets_per_sec": round(pk / sec)})
     print(f"  {pk} packets in {sec:.1f}s ({pk / sec:.0f} pkt/s)")
 
+if not rows:
+    sys.exit("No measurable runs: the capture is too small for a scalability test.")
 df = pd.DataFrame(rows).drop_duplicates("packets")
 df.to_csv("scaling.csv", index=False)
 print("\n", df.to_string(index=False))

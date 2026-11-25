@@ -18,6 +18,8 @@ parser.add_argument("--ground-truth", default=None,
                     help="ground truth CSV (ip,true_role). Default: ground_truth/<pcap name>.csv")
 parser.add_argument("--skip-scalability", action="store_true",
                     help="skip the slow scalability test")
+parser.add_argument("--force-scalability", action="store_true",
+                    help="run the scalability test even on small captures")
 args = parser.parse_args()
 
 pcap = os.path.abspath(args.pcap)
@@ -99,8 +101,13 @@ else:
 
 results["3. False alerts"] = run("STEP 3: False-alert test", "alerts.py", [pcap])
 
+SMALL_FILE_BYTES = 5 * 1024 * 1024
 if args.skip_scalability:
     print("\nSkipping scalability test (--skip-scalability).")
+    results["4. Scalability"] = None
+elif os.path.getsize(pcap) < SMALL_FILE_BYTES and not args.force_scalability:
+    print(f"\nSkipping scalability test: capture is under 5 MB, too small to measure. "
+          f"Use --force-scalability to run it anyway.")
     results["4. Scalability"] = None
 else:
     results["4. Scalability"] = run("STEP 4: Scalability test", "scalability.py", [pcap])
